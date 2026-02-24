@@ -1,10 +1,6 @@
 local M = {}
 local ns = vim.api.nvim_create_namespace("timer")
-
-local inactivity_timer_ms = 10000
-
 -- local group = vim.api.nvim_create_augroup("RopeTimer", { clear = true })
---
 -- vim.api.nvim_create_autocmd("InsertCharPre", {
 -- 	group = group,
 -- 	callback = function()
@@ -17,10 +13,13 @@ function M.setup()
 end
 
 local function open_floating_window()
-	-- vim.api.nvim_set_option_value("modifiable", true, { buf = buf })
-	-- vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "" })
-	-- vim.api.nvim_set_option_value("modifiable", false, { buf = buf })
 	local buf = vim.api.nvim_create_buf(false, true)
+
+	vim.api.nvim_set_option_value("buftype", "nofile", { buf = buf })
+	vim.api.nvim_set_option_value("bufhidden", "wipe", { buf = buf })
+	vim.api.nvim_set_option_value("swapfile", false, { buf = buf })
+	vim.api.nvim_set_option_value("buflisted", false, { buf = buf })
+
 	local win = vim.api.nvim_open_win(buf, false, {
 		relative = "editor",
 		row = 0,
@@ -42,10 +41,13 @@ end
 
 local function start_timer()
 	local duration_ms = 30000
-	local tick_ms = 50
-	local remaining_ms = duration_ms
+	local inactivity_timer_ms_total = 60000
 
-	local buf, win = open_floating_window()
+	local remaining_ms = duration_ms
+	local inactivity_timer_ms = inactivity_timer_ms_total
+
+	local tick_ms = 50
+	local buf, win = nil, nil
 
 	local timer = vim.uv.new_timer()
 	if not timer then
@@ -55,20 +57,32 @@ local function start_timer()
 		0,
 		tick_ms,
 		vim.schedule_wrap(function()
-			if remaining_ms < 0 then
+			if inactivity_timer_ms > 0 then
+				inactivity_timer_ms = inactivity_timer_ms - tick_ms
+				return
+			end
+
+			if not (win and vim.api.nvim_win_is_valid(win)) then
+				buf, win = open_floating_window()
+			end
+
+			remaining_ms = remaining_ms - tick_ms
+
+			if remaining_ms <= 0 then
 				if win and vim.api.nvim_win_is_valid(win) then
 					vim.api.nvim_win_close(win, true)
 				end
-				vim.on_key(nil, ns)
+				-- vim.on_key(nil, ns)
 				timer:stop()
 				timer:close()
 				return
 			end
 
-			local rope_length = math.ceil(vim.o.columns * remaining_ms / duration_ms)
+			local rope_length = math.floor(vim.o.columns * remaining_ms / duration_ms)
+			if rope_length < 0 then
+				rope_length = 0
+			end
 			draw_rope(buf, rope_length)
-
-			remaining_ms = remaining_ms - tick_ms
 		end)
 	)
 end
